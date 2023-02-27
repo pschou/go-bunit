@@ -10,15 +10,27 @@ import (
 func (b Bits) Format(f fmt.State, verb rune) {
 	formatByte(b, 1, f, verb, 'b', "b")
 }
+func (b Bits) String() string {
+	return fmt.Sprintf("%a", b)
+}
 func (b BitRate) Format(f fmt.State, verb rune) {
 	formatByte(b.n, float64(time.Second)/float64(b.d), f, verb, 'b', "bps")
+}
+func (b BitRate) String() string {
+	return fmt.Sprintf("%a", b)
 }
 
 func (b Bytes) Format(f fmt.State, verb rune) {
 	formatByte(b, 1, f, verb, 'B', "B")
 }
+func (b Bytes) String() string {
+	return fmt.Sprintf("%A", b)
+}
 func (b ByteRate) Format(f fmt.State, verb rune) {
 	formatByte(b.n, float64(time.Second)/float64(b.d), f, verb, 'B', "B/s")
+}
+func (b ByteRate) String() string {
+	return fmt.Sprintf("%A", b)
 }
 
 func formatByte(b []byte, scale float64, f fmt.State, verb, def rune, suf string) {
