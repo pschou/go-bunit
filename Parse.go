@@ -16,9 +16,18 @@ package bunit
 
 import (
 	"errors"
+	"log"
 
 	"github.com/cymertek/go-big"
 )
+
+func MustParseBytes(s string) Bytes {
+	b, err := ParseBytes(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return b
+}
 
 func ParseBytes(s string) (Bytes, error) {
 	b, err := ParseBits(s)
@@ -28,6 +37,14 @@ func ParseBytes(s string) (Bytes, error) {
 		return Bytes(i.Bytes()), nil
 	}
 	return nil, err
+}
+
+func MustParseBits(s string) Bits {
+	b, err := ParseBits(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return b
 }
 
 var eight = big.NewFloat(8)
