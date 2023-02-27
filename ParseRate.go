@@ -16,11 +16,19 @@ package bunit
 
 import (
 	"errors"
+	"time"
+
+	"github.com/cymertek/go-big"
 )
 
-func ParseRate(s string) (float64, error) {
+func ParseByteRate(s string) (*ByteRate, error) {
+	r, err := ParseBitRate(s)
+	// Scale up the demonitor (time) for Bytes
+	return &ByteRate{Bytes(r.n), r.d << 3}, err
+}
+func ParseBitRate(s string) (*BitRate, error) {
 	orig := s
-	var d float64
+	d := &big.Float{}
 	neg := false
 
 	// Consume [-+]?
@@ -33,42 +41,25 @@ func ParseRate(s string) (float64, error) {
 	}
 	// Special case: if all that is left is "0", this is zero.
 	if s == "0" {
-		return 0, nil
+		return nil, nil
 	}
 	if s == "" {
-		return 0, errors.New("binary unit: invalid value " + quote(orig))
+		return nil, errors.New("binary unit: invalid value " + quote(orig))
 	}
-	for s != "" {
-		var (
-			v, f  uint64      // integers before, after decimal point
-			scale float64 = 1 // value = v + f/scale
-		)
 
+	for s != "" && s[0] != '/' {
+		var v *big.Float
 		var err error
 
 		// The next character must be [0-9.]
 		if !(s[0] == '.' || '0' <= s[0] && s[0] <= '9') {
-			return 0, errors.New("binary unit: invalid value " + quote(orig))
+			return nil, errors.New("binary unit: invalid value " + quote(orig))
 		}
-		// Consume [0-9]*
-		pl := len(s)
-		v, s, err = leadingInt(s)
-		if err != nil {
-			return 0, errors.New("binary unit: invalid value " + quote(orig))
-		}
-		pre := pl != len(s) // whether we consumed anything before a period
 
-		// Consume (\.[0-9]*)?
-		post := false
-		if s != "" && s[0] == '.' {
-			s = s[1:]
-			pl := len(s)
-			f, scale, s = leadingFraction(s)
-			post = pl != len(s)
-		}
-		if !pre && !post {
-			// no digits (e.g. ".s" or "-.s")
-			return 0, errors.New("binary unit: invalid value " + quote(orig))
+		// Consume [0-9.]*
+		v, s, err = leadingBigFloat(s)
+		if err != nil {
+			return nil, errors.New("binary unit: invalid value " + quote(orig))
 		}
 
 		// Get rid of spaces
@@ -77,47 +68,65 @@ func ParseRate(s string) (float64, error) {
 		}
 
 		// Consume unit.
-		i, b := 0, 0
+		i, b := 0, -1
 		for ; i < len(s); i++ {
 			c := s[i]
 			if c == 'b' || c == 'B' {
 				b = i
-			}
-			if c == '.' || '0' <= c && c <= '9' {
+			} else if c == '.' || '0' <= c && c <= '9' || c == '/' {
 				break
 			}
 		}
-		if i < 3 {
-			return 0, errors.New("binary unit: missing rate unit in value " + quote(orig))
+
+		// Find a 'p' instead of a slash
+		if len(s) > b+2 && s[b+1] == 'p' {
+			s = s[:b+1] + "/" + s[b+2:]
+			i = b + 1
 		}
-		switch s[b:] {
-		case "bit/s", "bps", "b/s", "b/S", "Bit/s", "bits/s", "Bits/s":
-		case "Bps", "B/s", "B/S", "bytes/s", "Bytes/s":
-			v = v << 3
-			f *= 8
+
+		if b < 0 || i == 0 {
+			return nil, errors.New("binary unit: missing rate unit in value " + quote(orig))
+		}
+
+		switch s[b:i] {
+		case "bit", "b", "Bit", "bits", "Bits":
+		case "byte", "B", "Byte", "bytes", "Bytes":
+			v.Mul(v, eight)
 		default:
-			return 0, errors.New("binary unit: missing byte or bit unit in value " + quote(orig))
+			return nil, errors.New("binary unit: missing byte or bit unit in value " + quote(orig))
 		}
 		u := s[:b]
 		s = s[i:]
 		unit, ok := unitMap[u]
 		if !ok {
-			return 0, errors.New("binary unit: unknown unit " + quote(u) + " in value " + quote(orig))
+			return nil, errors.New("binary unit: unknown unit " + quote(u) + " in value " + quote(orig))
 		}
-		d += float64(v) * unit
-		if f > 0 {
-			d += float64(f) * (unit / scale)
-			if v > 1<<63 {
-				// overflow
-				return 0, errors.New("binary unit: invalid value " + quote(orig))
-			}
+		v.Mul(v, big.NewFloat(unit))
+		d.Add(d, v)
+	}
+
+	if s == "" || s[0] != '/' || s == "/" {
+		return nil, errors.New("binary unit: missing time in value " + quote(orig))
+	}
+	s = s[1:]
+
+	// Consume the duration
+	var t time.Duration
+	if s == "s" { // Do the simple stuff first
+		t = time.Second
+	} else {
+		if c := s[0]; c < '0' || c > '9' {
+			s = "1" + s
+		}
+		var err error
+		t, err = time.ParseDuration(s)
+		if err != nil {
+			return nil, errors.New("binary unit: error parsing time in value " + quote(orig))
 		}
 	}
 	if neg {
-		return -d, nil
+		t = -t
 	}
-	if d > 1<<63-1 {
-		return 0, errors.New("binary unit: invalid value " + quote(orig))
-	}
-	return d, nil
+	b, _ := d.Bytes()
+	return &BitRate{b, t}, nil
 }

@@ -1,8 +1,31 @@
 package bunit
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/cymertek/go-big"
+)
 
 var errLeadingInt = errors.New("time: bad [0-9]*") // never printed
+
+// leadingBigFloat consumes the leading [0-9.]* from s.
+func leadingBigFloat(s string) (x *big.Float, rem string, err error) {
+	i := 0
+	var pt bool
+	var num string
+	for ; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (pt || c != '.') {
+			break
+		}
+		num += string(c)
+	}
+	if num == "" {
+		return nil, rem, errLeadingInt
+	}
+	x, _, _ = (&big.Float{}).Parse(num, 10)
+	return x, s[i:], nil
+}
 
 // leadingInt consumes the leading [0-9]* from s.
 func leadingInt(s string) (x uint64, rem string, err error) {

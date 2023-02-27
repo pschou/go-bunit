@@ -6,7 +6,7 @@ import (
 )
 
 // Format the number of bits into a given unit for display
-func FormatRate(val float64, formatUnit string) (string, error) {
+func PrintRatef(val float64, formatUnit string) (string, error) {
 	format, s := doPrintfSplit(formatUnit)
 	f := float64(1)
 

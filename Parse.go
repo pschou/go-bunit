@@ -16,59 +16,54 @@ package bunit
 
 import (
 	"errors"
+
+	"github.com/cymertek/go-big"
 )
 
-func Parse(s string) (float64, error) {
+func ParseBytes(s string) (Bytes, error) {
+	b, err := ParseBits(s)
+	if err == nil {
+		i := (&big.Int{}).SetBytes(b)
+		i.Rsh(i, 3)
+		return Bytes(i.Bytes()), nil
+	}
+	return nil, err
+}
+
+var eight = big.NewFloat(8)
+
+func ParseBits(s string) (Bits, error) {
+	d := &big.Float{}
 	orig := s
-	var d float64
-	neg := false
 
 	// Consume [-+]?
 	if s != "" {
-		c := s[0]
-		if c == '-' || c == '+' {
-			neg = c == '-'
+		switch s[0] {
+		case '-':
+			return nil, errors.New("binary unit: invalid value " + quote(orig))
+		case '+':
 			s = s[1:]
 		}
 	}
 	// Special case: if all that is left is "0", this is zero.
 	if s == "0" {
-		return 0, nil
+		return []byte{0}, nil
 	}
 	if s == "" {
-		return 0, errors.New("binary unit: invalid value " + quote(orig))
+		return nil, errors.New("binary unit: invalid value " + quote(orig))
 	}
 	for s != "" {
-		var (
-			v, f  uint64      // integers before, after decimal point
-			scale float64 = 1 // value = v + f/scale
-		)
-
+		var v *big.Float
 		var err error
 
 		// The next character must be [0-9.]
 		if !(s[0] == '.' || '0' <= s[0] && s[0] <= '9') {
-			return 0, errors.New("binary unit: invalid value " + quote(orig))
+			return nil, errors.New("binary unit: invalid value " + quote(orig))
 		}
-		// Consume [0-9]*
-		pl := len(s)
-		v, s, err = leadingInt(s)
+		// Consume [0-9.]*
+		v, s, err = leadingBigFloat(s)
 		if err != nil {
-			return 0, errors.New("binary unit: invalid value " + quote(orig))
-		}
-		pre := pl != len(s) // whether we consumed anything before a period
-
-		// Consume (\.[0-9]*)?
-		post := false
-		if s != "" && s[0] == '.' {
-			s = s[1:]
-			pl := len(s)
-			f, scale, s = leadingFraction(s)
-			post = pl != len(s)
-		}
-		if !pre && !post {
-			// no digits (e.g. ".s" or "-.s")
-			return 0, errors.New("binary unit: invalid value " + quote(orig))
+			return nil, errors.New("binary unit: invalid value " + quote(orig))
 		}
 
 		// Get rid of spaces
@@ -88,36 +83,24 @@ func Parse(s string) (float64, error) {
 			}
 		}
 		if i == 0 {
-			return 0, errors.New("binary unit: missing unit in value " + quote(orig))
+			return nil, errors.New("binary unit: missing unit in value " + quote(orig))
 		}
-		switch s[b:] {
+		switch s[b:i] {
 		case "b", "bit", "Bit", "bits", "Bits":
 		case "B", "byte", "Byte", "bytes", "Bytes":
-			v = v << 3
-			f *= 8
+			v.Mul(v, eight)
 		default:
-			return 0, errors.New("binary unit: missing byte or bit unit in value " + quote(orig))
+			return nil, errors.New("binary unit: missing byte or bit unit in value " + quote(orig))
 		}
 		u := s[:b]
 		s = s[i:]
 		unit, ok := unitMap[u]
 		if !ok {
-			return 0, errors.New("binary unit: unknown unit " + quote(u) + " in value " + quote(orig))
+			return nil, errors.New("binary unit: unknown unit " + quote(u) + " in value " + quote(orig))
 		}
-		d += float64(v) * unit
-		if f > 0 {
-			d += float64(f) * (unit / scale)
-			if v > 1<<63 {
-				// overflow
-				return 0, errors.New("binary unit: invalid value " + quote(orig))
-			}
-		}
+		v.Mul(v, big.NewFloat(unit))
+		d.Add(d, v)
 	}
-	if neg {
-		return -d, nil
-	}
-	if d > 1<<63-1 {
-		return 0, errors.New("binary unit: invalid value " + quote(orig))
-	}
-	return d, nil
+	b, _ := d.Bytes()
+	return Bits(b), nil
 }
