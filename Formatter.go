@@ -40,7 +40,7 @@ func formatByte(b []byte, scale float64, f fmt.State, verb, def rune, suf string
 	}
 	switch verb {
 	case def:
-	case 'a':
+	case 'a', 's':
 		// Auto with 1000 multiples
 		n, _ := v.Int(nil)
 		n = n.Lsh(n, 2)
