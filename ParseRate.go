@@ -21,11 +21,14 @@ import (
 	"github.com/cymertek/go-big"
 )
 
+// Parse a string into a ByteRate value
 func ParseByteRate(s string) (*ByteRate, error) {
 	r, err := ParseBitRate(s)
 	// Scale up the demonitor (time) for Bytes
 	return &ByteRate{Bytes(r.n), r.d << 3}, err
 }
+
+// Parse a string into a BitRate value
 func ParseBitRate(s string) (*BitRate, error) {
 	orig := s
 	d := &big.Float{}
@@ -77,15 +80,35 @@ func ParseBitRate(s string) (*BitRate, error) {
 				break
 			}
 		}
+		if i == 0 {
+			return nil, errors.New("binary unit: missing unit in value " + quote(orig))
+		}
+
+		// Test for the case that we only have the SI suffix
+		if unit, ok := unitMap[s[:i]]; ok {
+			v.Mul(v, big.NewFloat(unit))
+			d.Add(d, v)
+			s = s[i:]
+			continue // Look for more SI prefixes
+		}
+
+		if b < 0 {
+			return nil, errors.New("binary unit: missing rate unit in value " + quote(orig))
+		}
+
+		// Test for the case that we have the SI suffix and unit
+		u := s[:b]
+		unit, ok := unitMap[u]
+		if !ok {
+			return nil, errors.New("binary unit: unknown unit " + quote(u) + " in value " + quote(orig))
+		}
+		v.Mul(v, big.NewFloat(unit))
+		d.Add(d, v)
 
 		// Find a 'p' instead of a slash
 		if len(s) > b+2 && s[b+1] == 'p' {
 			s = s[:b+1] + "/" + s[b+2:]
 			i = b + 1
-		}
-
-		if b < 0 || i == 0 {
-			return nil, errors.New("binary unit: missing rate unit in value " + quote(orig))
 		}
 
 		switch s[b:i] {
@@ -95,14 +118,7 @@ func ParseBitRate(s string) (*BitRate, error) {
 		default:
 			return nil, errors.New("binary unit: missing byte or bit unit in value " + quote(orig))
 		}
-		u := s[:b]
 		s = s[i:]
-		unit, ok := unitMap[u]
-		if !ok {
-			return nil, errors.New("binary unit: unknown unit " + quote(u) + " in value " + quote(orig))
-		}
-		v.Mul(v, big.NewFloat(unit))
-		d.Add(d, v)
 	}
 
 	if s == "" || s[0] != '/' || s == "/" {

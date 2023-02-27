@@ -21,6 +21,7 @@ import (
 	"github.com/cymertek/go-big"
 )
 
+// Like ParseBytes but will log.Fatal if not able to parse
 func MustParseBytes(s string) Bytes {
 	b, err := ParseBytes(s)
 	if err != nil {
@@ -29,6 +30,7 @@ func MustParseBytes(s string) Bytes {
 	return b
 }
 
+// Parse a string into a Bytes value
 func ParseBytes(s string) (Bytes, error) {
 	b, err := ParseBits(s)
 	if err == nil {
@@ -39,6 +41,7 @@ func ParseBytes(s string) (Bytes, error) {
 	return nil, err
 }
 
+// Like ParseBits but will log.Fatal if not able to parse
 func MustParseBits(s string) Bits {
 	b, err := ParseBits(s)
 	if err != nil {
@@ -49,6 +52,7 @@ func MustParseBits(s string) Bits {
 
 var eight = big.NewFloat(8)
 
+// Parse a string into a Bits value
 func ParseBits(s string) (Bits, error) {
 	d := &big.Float{}
 	orig := s
@@ -89,7 +93,7 @@ func ParseBits(s string) (Bits, error) {
 		}
 
 		// Consume unit.
-		i, b := 0, 0
+		i, b := 0, -1
 		for ; i < len(s); i++ {
 			c := s[i]
 			if c == 'b' || c == 'B' {
@@ -102,21 +106,36 @@ func ParseBits(s string) (Bits, error) {
 		if i == 0 {
 			return nil, errors.New("binary unit: missing unit in value " + quote(orig))
 		}
-		switch s[b:i] {
-		case "b", "bit", "Bit", "bits", "Bits":
-		case "B", "byte", "Byte", "bytes", "Bytes":
-			v.Mul(v, eight)
-		default:
-			return nil, errors.New("binary unit: missing byte or bit unit in value " + quote(orig))
+
+		// Test for the case that we only have the SI suffix
+		if unit, ok := unitMap[s[:i]]; ok {
+			v.Mul(v, big.NewFloat(unit))
+			d.Add(d, v)
+			s = s[i:]
+			continue // Look for more SI prefixes
 		}
+
+		if b < 0 {
+			return nil, errors.New("binary unit: missing base unit in value " + quote(orig))
+		}
+
+		// Test for the case that we have the SI suffix and unit
 		u := s[:b]
-		s = s[i:]
 		unit, ok := unitMap[u]
 		if !ok {
 			return nil, errors.New("binary unit: unknown unit " + quote(u) + " in value " + quote(orig))
 		}
 		v.Mul(v, big.NewFloat(unit))
 		d.Add(d, v)
+
+		switch s[b:i] {
+		case "b", "bit", "Bit", "bits", "Bits":
+		case "o", "B", "byte", "Byte", "bytes", "Bytes":
+			d.Mul(d, eight)
+		default:
+			return nil, errors.New("binary unit: missing byte or bit unit in value " + quote(orig))
+		}
+		s = s[i:] // This should be the end
 	}
 	b, _ := d.Bytes()
 	return Bits(b), nil
